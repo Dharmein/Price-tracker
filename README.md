@@ -1,33 +1,58 @@
-This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with [`plasmo init`](https://www.npmjs.com/package/plasmo).
+# E-Commerce Price Tracker 
 
-## Getting Started
+A lightweight Node.js backend that concurrently searches multiple e-commerce websites to find the best prices for products.
+This service acts as the core engine for a browser extension. It manages headless browser scraping, parses web pages to find prices, and runs a background system for real-time price drop emails.
 
-First, run the development server:
 
-```bash
-pnpm dev
-# or
-npm run dev
-```
+## Features
+* **Multi-Site Scraping:** Uses Puppeteer to search multiple retailers simultaneously for faster results.
+* **Smart Data Extraction:**  Employs fallback CSS selectors to accurately find prices even when website layouts change or feature different deal formats.
+* **Automated Price Alerts:** Includes a background job that regularly checks your watched products and sends an email notification via Nodemailer when your target price is reached.
+* **Browser Extension Ready:** Designed to communicate directly with a React-based Chrome extension using Express and CORS.
 
-Open your browser and load the appropriate development build. For example, if you are developing for the chrome browser, using manifest v3, use: `build/chrome-mv3-dev`.
+## Tech Stack
+* **Node.js & Express.js:** Server and API routing.
+* **Puppeteer:** Headless browser automation for web scraping.
+* **Nodemailer:** Automated email delivery for price alerts.
 
-You can start editing the popup by modifying `popup.tsx`. It should auto-update as you make changes. To add an options page, simply add a `options.tsx` file to the root of the project, with a react component default exported. Likewise to add a content page, add a `content.ts` file to the root of the project, importing some module and do some logic, then reload the extension on your browser.
+## 📦 Installation & Setup
 
-For further guidance, [visit our Documentation](https://docs.plasmo.com/)
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd price-tracker-api
+   ```
 
-## Making production build
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-Run the following:
+3. **Configure Environment Variables:** To enable email alerts, create a `.env` file in the root folder with your SMTP details (such as a Gmail App Password):
+   ```env
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=your_email@gmail.com
+   SMTP_PASS=your_app_password
+   SMTP_SECURE=false
+   ```
 
-```bash
-pnpm build
-# or
-npm run build
-```
+4. **Start the server:**
+   ```bash
+   node server.js
+   ```
+   
+   *The server runs on* `http://localhost:3001`.
 
-This should create a production bundle for your extension, ready to be zipped and published to the stores.
+## 🔌 API Endpoints
 
-## Submit to the webstores
+### 1. Compare Prices
 
-The easiest way to deploy your Plasmo extension is to use the built-in [bpp](https://bpp.browser.market) GitHub action. Prior to using this action however, make sure to build your extension and upload the first version to the store to establish the basic credentials. Then, simply follow [this setup instruction](https://docs.plasmo.com/framework/workflows/submit) and you should be on your way for automated submission!
+* **Endpoint:** `GET /api/compare`
+* **Description:** Searches for a product across configured retailers and returns a list of prices.
+* **Example Request:** `http://localhost:3001/api/compare?q=iPhone 15`
+
+### 2. Set Price Alert
+
+* **Endpoint:** `POST /api/alert`
+* **Description:** Registers a product to be monitored. When the price drops to or below the `desiredPrice`, an email is sent.
