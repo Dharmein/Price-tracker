@@ -204,11 +204,20 @@ async function scrapeFlipkart(query, browser) {
     const searchUrl = `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`;
     console.log(`🔗 Searching Flipkart: ${searchUrl}`);
     
-    await page.goto(searchUrl, { waitUntil: "networkidle0", timeout: 15000 }).catch(() => {});
-    
-    // Wait for products to actually load - try multiple selectors
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+
     try {
-      await page.waitForSelector("div._2kHmtP, div[class*='ProductCard'], div[data-tracking-id]", { timeout: 8000 }).catch(() => {});
+      const closeButton = await page.waitForSelector("button._2KpZ6l._2doB4z", { timeout: 5000 });
+      if (closeButton) {
+        await closeButton.click();
+        console.log("✖️ Closed Flipkart login popup");
+      }
+    } catch (e) {
+      // no modal appeared, continue normally
+    }
+
+    try {
+      await page.waitForSelector("div._1AtVbE, div._13oc-S, div._1YokD2, div._2kHMtP, a.s1Q9rs, a.IRpwTa", { timeout: 10000 }).catch(() => {});
     } catch (e) {
       console.warn("⚠️ Flipkart product selector not found");
     }
@@ -219,74 +228,66 @@ async function scrapeFlipkart(query, browser) {
     await savePageHTML(page, `flipkart_${Date.now()}.html`);
 
     const result = await page.evaluate(() => {
-      // Flipkart product containers - try multiple selector patterns
-      let containers = document.querySelectorAll("div._2kHmtP");
-      
-      if (containers.length === 0) {
-        // Fallback: look for any div that has both a link and price
-        containers = document.querySelectorAll("div[data-tracking-id]");
-      }
-      
-      if (containers.length === 0) {
-        // Last resort: find divs with product links
-        containers = document.querySelectorAll("div._1mbDgj");
-      }
-      
-      console.log(`Found ${containers.length} containers on Flipkart`);
-      
-      if (containers.length === 0) {
-        // Debug: log what's in the page
-        console.log("Page body text preview:", document.body.innerText.substring(0, 300));
+      const priceSelectors = ["div._30jeq3", "div._3I9_wc", "div._1_WHN1", "span._24_Dny", "div._25b18c"];
+
+      function findPrice(container) {
+        for (const sel of priceSelectors) {
+          const el = container.querySelector(sel);
+          if (el && el.innerText && el.innerText.includes("₹")) return el;
+        }
+        const allEls = container.querySelectorAll("span, div");
+        for (const el of allEls) {
+          const text = (el.innerText || el.textContent || "").trim();
+          if (text.match(/₹\s*[\d,]+/)) return el;
+        }
         return null;
       }
 
-      for (let card of containers) {
-        // Get title from various possible selectors
-        let titleEl = card.querySelector("a.IRpwTa");
-        if (!titleEl) titleEl = card.querySelector("a._4rR01T");
-        if (!titleEl) titleEl = card.querySelector("a[title]");
-        if (!titleEl) titleEl = card.querySelector("a[href*='/p/']");
-        if (!titleEl) {
-          const allLinks = card.querySelectorAll("a");
-          for (let link of allLinks) {
-            const text = (link.innerText || link.textContent || "").trim();
-            if (text && text.length > 5 && !text.includes("₹")) {
-              titleEl = link;
-              break;
-            }
+      const titleSelectors = ["div._4rR01T", "a.s1Q9rs", "a.IRpwTa", "div._2WkVRV"];
+      const cardSet = new Set();
+      const candidates = [];
+
+      for (const sel of titleSelectors) {
+        const els = Array.from(document.querySelectorAll(sel));
+        for (const el of els) {
+          const card = el.closest("div");
+          if (card && !cardSet.has(card)) {
+            cardSet.add(card);
+            candidates.push(card);
           }
         }
-        
+      }
+
+      if (candidates.length === 0) {
+        const fallback = Array.from(document.querySelectorAll("div._1AtVbE, div._13oc-S, div._2kHMtP"));
+        fallback.forEach((card) => {
+          if (!cardSet.has(card)) {
+            cardSet.add(card);
+            candidates.push(card);
+          }
+        });
+      }
+
+      for (const card of candidates) {
+        let titleEl = null;
+        for (const sel of titleSelectors) {
+          titleEl = card.querySelector(sel);
+          if (titleEl) break;
+        }
         if (!titleEl) continue;
 
         const title = (titleEl.innerText || titleEl.textContent || "").trim();
         if (!title || title.length < 5) continue;
 
-        // Get price from various possible selectors
-        let priceEl = card.querySelector("div._30jeq3");
-        if (!priceEl) priceEl = card.querySelector("._16Jk6d");
-        if (!priceEl) priceEl = card.querySelector("[class*='price']");
-        if (!priceEl) {
-          // Search for any element with rupee symbol
-          const allElements = card.querySelectorAll("*");
-          for (let el of allElements) {
-            const text = (el.innerText || el.textContent || "").trim();
-            if (text.match(/₹\s*[\d,]+/)) {
-              priceEl = el;
-              break;
-            }
-          }
-        }
-        
+        const priceEl = findPrice(card);
         if (!priceEl) continue;
 
         const price = (priceEl.innerText || priceEl.textContent || "").trim();
         if (!price || !price.includes("₹")) continue;
 
-        // Get product link
-        let linkEl = card.querySelector("a[href*='/p/']");
-        if (!linkEl) linkEl = titleEl;
-        
+        let linkEl = card.querySelector("a._1fQZEK, a.s1Q9rs, a.IRpwTa, a[href*='/p/']");
+        if (!linkEl) linkEl = card.querySelector("a");
+
         let href = linkEl ? linkEl.getAttribute("href") : "";
         if (href && href.startsWith("/")) {
           href = `https://www.flipkart.com${href}`;
@@ -321,8 +322,7 @@ async function scrapeVijaySales(query, browser) {
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     );
-    // Try the main search URL instead of /search/ endpoint
-    const searchUrl = `https://www.vijaysales.com/?q=${encodeURIComponent(query)}`;
+    const searchUrl = `https://www.vijaysales.com/search-listing?q=${encodeURIComponent(query)}`;
     console.log(`🔗 Searching Vijay Sales: ${searchUrl}`);
     
     await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
@@ -332,56 +332,39 @@ async function scrapeVijaySales(query, browser) {
     await savePageHTML(page, `vijaysales_${Date.now()}.html`);
 
     const result = await page.evaluate(() => {
-      const cards = document.querySelectorAll(
-        "[class*='product'], div.item, article, [class*='ProductCard'], [role='listitem'], div[class*='Product']"
-      );
-      
-      console.log(`Found ${cards.length} cards on Vijay Sales`);
-      
-      if (cards.length === 0) {
-        return null;
+      const links = Array.from(document.querySelectorAll("a[href*='/p/']"));
+
+      function cleanTitle(text) {
+        return text
+          .replace(/\s*₹[\d,]+.*$/, "")
+          .replace(/(Exchange Bonus|Notify Me|Wishlist|Shopping Cart|Out Of Stock|product deals|Extra Deals Available|Same Day Shipping).*$/i, "")
+          .trim();
       }
 
-      for (let card of cards) {
-        let titleEl = card.querySelector("h2");
-        if (!titleEl) titleEl = card.querySelector("h1");
-        if (!titleEl) titleEl = card.querySelector("[class*='title']");
-        if (!titleEl) titleEl = card.querySelector("span");
-        
-        if (!titleEl) continue;
+      for (const linkEl of links) {
+        const href = (linkEl.getAttribute("href") || "").trim();
+        if (!href || !href.includes("/p/")) continue;
 
-        const title = (titleEl.innerText || titleEl.textContent || "").trim();
+        const text = (linkEl.innerText || linkEl.textContent || "").trim();
+        if (!text || text.length < 10) continue;
+
+        const priceMatch = text.match(/₹\s*[\d,]+/);
+        if (!priceMatch) continue;
+
+        const price = priceMatch[0].trim();
+        const title = cleanTitle(text.split(price)[0] || text);
         if (!title || title.length < 5) continue;
 
-        let priceEl = card.querySelector("[class*='price']");
-        if (!priceEl) priceEl = card.querySelector(".amt");
-        if (!priceEl) {
-          const allElements = card.querySelectorAll("*");
-          for (let el of allElements) {
-            if (el.textContent?.includes("₹")) {
-              priceEl = el;
-              break;
-            }
-          }
-        }
-        
-        if (!priceEl) continue;
-
-        const price = (priceEl.innerText || priceEl.textContent || "").trim();
-        if (!price || !price.includes("₹")) continue;
-
-        const linkEl = card.querySelector("a");
-        let href = linkEl ? linkEl.getAttribute("href") : "";
-        
-        if (href && href.startsWith("/")) {
-          href = `https://www.vijaysales.com${href}`;
+        let hrefFull = href;
+        if (hrefFull.startsWith("/")) {
+          hrefFull = `https://www.vijaysales.com${hrefFull}`;
         }
 
         console.log(`✅ Vijay Sales found: ${title.substring(0, 50)}`);
         return {
           title: title,
           price: price,
-          url: href || "https://www.vijaysales.com"
+          url: hrefFull
         };
       }
 
@@ -572,6 +555,65 @@ async function scrapeInstamart(query, browser) {
 }
 
 /**
+ * Reliance Digital Scraper
+ */
+async function scrapeRelianceDigital(query, browser) {
+  const page = await browser.newPage();
+  try {
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    );
+    const searchUrl = `https://www.reliancedigital.in/search?q=${encodeURIComponent(query)}`;
+    console.log(`🔗 Searching Reliance Digital: ${searchUrl}`);
+
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+    await page.waitForSelector("a[data-test='product-card'], div.card-product, .product-item, .product-card, .product-tile", { timeout: 10000 }).catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await savePageHTML(page, `reliancedigital_${Date.now()}.html`);
+
+    const result = await page.evaluate(() => {
+      const productCards = Array.from(document.querySelectorAll("a[data-test='product-card'], div.card-product, .product-item, .product-card, .product-tile"));
+      const fallbackCards = Array.from(document.querySelectorAll(".product-item, .product-card, .product-tile"));
+      const cards = productCards.length > 0 ? productCards : fallbackCards;
+
+      function cleanText(text) {
+        return (text || "").trim().replace(/\s+/g, " ");
+      }
+
+      for (const card of cards) {
+        const titleEl = card.querySelector(".card-title, .product-title, .product-name, h2, h3");
+        const priceEl = card.querySelector(".price, .product-final-price, .product-price, .offer-price, .price-value");
+        const linkEl = card.closest("a") || card.querySelector("a");
+
+        if (!titleEl || !priceEl) continue;
+
+        const title = cleanText(titleEl.innerText || titleEl.textContent || "");
+        const price = cleanText(priceEl.innerText || priceEl.textContent || "");
+        if (!title || !price || !price.includes("₹")) continue;
+
+        let href = linkEl ? linkEl.getAttribute("href") : "";
+        if (href && href.startsWith("/")) href = `https://www.reliancedigital.in${href}`;
+
+        return {
+          title,
+          price,
+          url: href || searchUrl
+        };
+      }
+
+      return null;
+    });
+
+    return result ? { store: "Reliance Digital", ...result } : null;
+  } catch (err) {
+    console.error("❌ Reliance Digital scrape error:", err.message);
+    return null;
+  } finally {
+    await page.close();
+  }
+}
+
+/**
  * Main Orchestrator
  */
 async function scrapeAll(query) {
@@ -599,6 +641,7 @@ async function scrapeAll(query) {
       scrapeAmazon(query, browser),
       scrapeFlipkart(query, browser),
       scrapeVijaySales(query, browser),
+      scrapeRelianceDigital(query, browser),
       scrapeZepto(query, browser),
       scrapeBlinkit(query, browser),
       scrapeInstamart(query, browser)
@@ -613,7 +656,7 @@ async function scrapeAll(query) {
     results.forEach((result, index) => {
       if (result.status === "rejected") {
         debugData.errors.push({
-          store: ["Amazon", "Flipkart", "Vijay Sales", "Zepto", "Blinkit", "Instamart"][index],
+          store: ["Amazon", "Flipkart", "Vijay Sales", "Reliance Digital", "Zepto", "Blinkit", "Instamart"][index],
           error: result.reason.message
         });
       }
