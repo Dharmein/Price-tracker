@@ -13,7 +13,10 @@ export default function IndexPopup() {
   const [productTitle, setProductTitle] = useState<string>("");
   const [results, setResults] = useState<ScrapedResult[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [alertLoading, setAlertLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const [notifyStatus, setNotifyStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [desiredPrice, setDesiredPrice] = useState<string>("");
   const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND_URL);
 
   const handleScanAndCompare = async () => {
@@ -75,6 +78,50 @@ export default function IndexPopup() {
   };
 
   // Helper function to safely open external links in a new browser tab
+  const handleSetPriceAlert = async () => {
+    setError("");
+    setNotifyStatus(null);
+
+    if (!productTitle) {
+      setError("No product was detected to set an alert.");
+      return;
+    }
+
+    const parsedPrice = Number(desiredPrice.replace(/[^0-9.]/g, ""));
+    if (!desiredPrice || Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+      setError("Enter a valid target price to receive an alert.");
+      return;
+    }
+
+    setAlertLoading(true);
+    try {
+      const normalizedBaseUrl = (backendUrl || DEFAULT_BACKEND_URL).trim().replace(/\/+$/, "");
+      const response = await fetch(`${normalizedBaseUrl}/api/alert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productTitle, desiredPrice: parsedPrice })
+      });
+
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error || `Backend returned ${response.status}`);
+      }
+
+      setNotifyStatus({
+        type: "success",
+        message: `Alert set for ₹${parsedPrice.toLocaleString()}. You will receive an email at djshah2710@gmail.com when the price is reached.`
+      });
+      setDesiredPrice("");
+    } catch (err: any) {
+      setNotifyStatus({
+        type: "error",
+        message: err?.message || "Unable to register the price alert."
+      });
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
   const openExternalLink = (url: string) => {
     if (typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.create({ url });
@@ -123,6 +170,56 @@ export default function IndexPopup() {
           }}
         />
       </div>
+
+      {productTitle && (
+        <div style={{ marginTop: "12px" }}>
+          <strong style={{ fontSize: "12px", color: "#111827" }}>Set a price alert</strong>
+          <div style={{ marginTop: "8px", display: "flex", gap: "8px", alignItems: "center" }}>
+            <input
+              value={desiredPrice}
+              onChange={(event) => setDesiredPrice(event.target.value)}
+              placeholder="Target price (e.g. 59900)"
+              style={{
+                flex: 1,
+                padding: "8px",
+                border: "1px solid #D1D5DB",
+                borderRadius: "6px",
+                fontSize: "12px"
+              }}
+            />
+            <button
+              onClick={handleSetPriceAlert}
+              disabled={alertLoading}
+              style={{
+                padding: "10px 12px",
+                backgroundColor: alertLoading ? "#9CA3AF" : "#10B981",
+                color: "#FFFFFF",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: 600,
+                cursor: alertLoading ? "not-allowed" : "pointer"
+              }}>
+              {alertLoading ? "Setting alert..." : "Notify me"}
+            </button>
+          </div>
+          <div style={{ marginTop: "8px", fontSize: "11px", color: "#6B7280" }}>
+            A notification email will be sent to djshah2710@gmail.com when the price drops to your target.
+          </div>
+          {notifyStatus && (
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "12px",
+                color: notifyStatus.type === "success" ? "#047857" : "#B91C1C",
+                backgroundColor: notifyStatus.type === "success" ? "#D1FAE5" : "#FEE2E2",
+                padding: "8px",
+                borderRadius: "4px"
+              }}>
+              {notifyStatus.message}
+            </div>
+          )}
+        </div>
+      )}
 
       {productTitle && (
         <div style={{ marginTop: "12px", fontSize: "12px", color: "#374151" }}>
