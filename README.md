@@ -56,3 +56,6 @@ This service acts as the core engine for a browser extension. It manages headles
 
 * **Endpoint:** `POST /api/alert`
 * **Description:** Registers a product to be monitored. When the price drops to or below the `desiredPrice`, an email is sent.
+  
+<img width="800" height="450" alt="demo" src="https://github.com/user-attachments/assets/fb08b8a3-08da-4989-a235-203b69fa359b" />
+
