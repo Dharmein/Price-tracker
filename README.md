@@ -3,6 +3,8 @@
 A lightweight Node.js backend that concurrently searches multiple e-commerce websites to find the best prices for products.
 This service acts as the core engine for a browser extension. It manages headless browser scraping, parses web pages to find prices, and runs a background system for real-time price drop emails.
 
+<img width="800" height="450" alt="demo" src="https://github.com/user-attachments/assets/fb08b8a3-08da-4989-a235-203b69fa359b" />
+
 
 ## Features
 * **Multi-Site Scraping:** Uses Puppeteer to search multiple retailers simultaneously for faster results.
@@ -57,5 +59,4 @@ This service acts as the core engine for a browser extension. It manages headles
 * **Endpoint:** `POST /api/alert`
 * **Description:** Registers a product to be monitored. When the price drops to or below the `desiredPrice`, an email is sent.
   
-<img width="800" height="450" alt="demo" src="https://github.com/user-attachments/assets/fb08b8a3-08da-4989-a235-203b69fa359b" />
 
